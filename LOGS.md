@@ -16,6 +16,48 @@ Newest entries should be added at the top below this introduction.
 
 ---
 
+2026-09-01 — Phase 1 correlation primitives implemented and verified
+
+### Implementation
+
+Added reusable finite-length correlation support under:
+
+- `src/iqwav/correlation/core.py`
+- `src/iqwav/correlation/__init__.py`
+
+Public functions:
+
+- `autocorrelation(samples)`
+- `normalized_autocorrelation(samples)`
+- `cross_correlation(first, second)`
+- `normalized_cross_correlation(first, second)`
+- `find_correlation_peaks(correlation, lags, ...)`
+
+Cross-correlation uses the explicit convention:
+
+`r_xy[lag] = sum_n x[n + lag] * conj(y[n])`
+
+with full finite-length lags ordered from `-(len(y)-1)` through `len(x)-1`.
+Consequently, a delayed copy in the first input yields a peak at positive
+delay. Normalized variants use the energy of the exact overlapping samples at
+each lag and reject whole-input zero-energy cases.
+
+### Tests
+
+Added:
+
+- `tests/unit/test_correlation.py`
+
+Focused correlation tests: `19 passed`.
+
+Complete project test suite: `298 passed`.
+
+Coverage includes known real and complex sequences, documented complex
+conjugation behavior, normalization bounds and zero-energy rejection, expected
+delayed-copy peak locations, complex-magnitude peak detection, and invalid
+array/option inputs.
+
+
 ## 2026-08-30 — Wideband OTA FM channelization and demodulation verified
 
 ### Experiment
