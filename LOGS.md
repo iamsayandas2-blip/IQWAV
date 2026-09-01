@@ -16,6 +16,74 @@ Newest entries should be added at the top below this introduction.
 
 ---
 
+---
+
+2026-09-02 — Estimation Phase 2A: spectral peak frequency estimation implemented and verified
+
+### Implementation
+
+Added the first primitive under the previously-reserved estimation subsystem:
+
+- `src/iqwav/estimation/spectral.py`
+- `src/iqwav/estimation/__init__.py`
+
+Public API:
+
+- `estimate_peak_frequency(samples, fs, *, refine=True) -> PeakFrequencyEstimate`
+- `PeakFrequencyEstimate` (frozen dataclass): `frequency_hz`, `bin_frequency_hz`,
+  `resolution_hz`, `bin_index`, `refined`
+
+Reuses the existing `iqwav.dsp.magnitude_spectrum` FFT utility rather than
+duplicating FFT logic; the estimator is a higher-level interpretation layer
+over that spectrum.
+
+Behavior:
+
+- Complex IQ input: full two-sided spectrum search, **signed** frequency
+  (a tone at `+f` estimates `+f`; a tone at `-f` estimates `-f`).
+- Real-valued input: search restricted to the non-negative half of the
+  spectrum (spectrum is conjugate-symmetric for real signals), so the
+  returned frequency is always **non-negative**; sign is not meaningful
+  for a real tone.
+- Sub-bin refinement (default on): standard three-point parabolic
+  interpolation of the local log-magnitude around the peak bin, using
+  circular neighbors since the FFT spectrum is periodic. `refine=False`
+  returns the raw FFT bin center with no interpolation.
+- Constant/zero-variance input (including all-zero) raises `ValueError`
+  rather than fabricating a frequency, since there is no oscillating
+  component to localize.
+- Requires `fs` positive and finite, and at least 4 samples.
+
+This is explicitly a spectral peak estimator, not a blind RF carrier
+estimator: it assumes `fs` is already known and does not attempt occupied
+bandwidth, noise-floor/SNR estimation, activity detection, carrier
+recovery, CFO correction, timing recovery, baud-rate estimation, or
+modulation classification. Those remain later milestones.
+
+### Tests
+
+Added:
+
+- `tests/unit/test_spectral_estimation.py`
+
+Focused estimation tests: `18 passed`.
+
+Complete project test suite: `316 passed` (298 baseline + 18 new, zero
+regressions).
+
+Coverage includes signed complex positive/negative-frequency tones, the
+real-signal non-negative convention, off-bin tones with refinement shown
+to reduce error versus the raw bin, noisy-tone recovery at moderate SNR,
+strongest-tone selection among multiple simultaneous tones, and invalid
+inputs (bad sample rate, empty/too-few samples, non-finite samples, and
+constant/zero signals).
+
+### Next
+
+Per milestone scope, stopping after Phase 2A. Occupied bandwidth, noise
+floor, SNR estimation, activity detection, CFO, and other estimation
+tasks are deferred to later milestones.
+
 2026-09-01 — Phase 1 correlation primitives implemented and verified
 
 ### Implementation
