@@ -56,3 +56,5 @@ dist/
 # Logs/temp
 *.log
 *.tmp
+
+.pytest_tmp/
