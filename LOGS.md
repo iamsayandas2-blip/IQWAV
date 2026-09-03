@@ -17,6 +17,96 @@ Newest entries should be added at the top below this introduction.
 ---
 
 ---
+2026-09-03 — Estimation Phase 2B: occupied-bandwidth estimation implemented and verified
+
+### Implementation
+
+Added a second primitive under the estimation subsystem:
+
+- `src/iqwav/estimation/bandwidth.py`
+
+Modified:
+
+- `src/iqwav/estimation/__init__.py` (export the new public API)
+
+Public API:
+
+- `estimate_occupied_bandwidth(samples, sample_rate, percent_power=99.0) -> OccupiedBandwidthEstimate`
+- `OccupiedBandwidthEstimate` (frozen dataclass): `bandwidth_hz`,
+  `lower_frequency_hz`, `upper_frequency_hz`, `percent_power`
+
+Reuses the existing `iqwav.dsp.magnitude_spectrum` FFT utility rather than
+duplicating FFT logic; the estimator is a higher-level interpretation layer
+over that spectrum, in the same style as `estimate_peak_frequency`.
+
+Definition used: **cumulative-power, bin-based occupied bandwidth.** The
+smallest contiguous run of FFT bins whose summed power reaches
+`percent_power` percent of the total measured spectral power is located via
+an exact two-pointer minimum-window search (correct because bin powers are
+non-negative). Each bin of width `resolution_hz = sample_rate / N` is
+treated as covering `[bin_freq - resolution_hz/2, bin_freq + resolution_hz/2)`;
+the reported edges are the outer edges of the first/last included bin, so
+`bandwidth_hz` is `(bins in the run) * resolution_hz` except where clamped
+at the real-signal boundaries described below.
+
+Behavior:
+
+- Complex IQ input: full two-sided spectrum, bins ordered ascending from
+  approximately `-sample_rate/2` to `+sample_rate/2`; a returned interval
+  may include negative frequencies, DC, positive frequencies, or any mix.
+  Mirror-image tones at `+f`/`-f` are independent physical content and are
+  **not** folded together.
+- Real-valued input: the FFT spectrum is conjugate-symmetric, so `+f` and
+  `-f` bins represent the *same* physical component. These are folded onto
+  the non-negative axis before the search (`power[+k] + power[-k]` for
+  `0 < k < N//2`; DC and, for even `N`, Nyquist are self-conjugate and used
+  unmodified). Folded total power equals the original two-sided total, so
+  no energy is discarded or double-counted. Boundaries are clamped to
+  `[0, sample_rate/2]`.
+- `percent_power` is monotonic: a larger value can never produce a smaller
+  bandwidth for the same signal (proven by the two-pointer search: any
+  window satisfying a higher power threshold also satisfies a lower one).
+- Constant (including all-zero) input raises `ValueError` rather than
+  fabricating a bandwidth, since a DC-only signal has no meaningful
+  occupied bandwidth under this definition.
+- Requires `sample_rate` positive and finite, `percent_power` finite and
+  in `(0, 100]`, and at least 4 samples.
+
+This is explicitly a cumulative-power bin-based estimator, not a
+noise-floor-aware bandwidth estimator and not an automatic RF
+signal-activity detector: it does not separate signal power from noise
+power and does not decide whether a signal is present. It is not a
+general-purpose blind RF bandwidth estimator.
+
+### Tests
+
+Added:
+
+- `tests/unit/test_bandwidth_estimation.py`
+
+Focused estimation tests: `36 passed`.
+
+Complete project test suite: `352 passed` (316 baseline + 36 new, zero
+regressions).
+
+Coverage includes a narrowband on-bin complex tone, two separated complex
+tones (including a much weaker second tone at high `percent_power`),
+broadband/noise-like signals versus a tone-plus-moderate-noise case,
+monotonicity of bandwidth in `percent_power` across a full sweep including
+100%, real-valued input (including near-Nyquist and pure-Nyquist-tone
+folding correctness), positive/negative complex-frequency content shown
+not to cancel or fold, even and odd sample counts for both real and
+complex input, DC- and Nyquist-adjacent edge cases, and the full set of
+invalid inputs (bad sample rate, empty/too-few/non-1D/non-finite samples,
+zero/constant signals, and invalid `percent_power`).
+
+### Next
+
+Per milestone scope, stopping after Phase 2B. CFO, SNR, noise-floor
+estimation, activity detection, AMR, synchronization, modulation
+classification, baud-rate estimation, FEC, framing, and GUI work remain
+deferred to later milestones.
+
 
 2026-09-02 — Estimation Phase 2A: spectral peak frequency estimation implemented and verified
 
