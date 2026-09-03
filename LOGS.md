@@ -17,6 +17,85 @@ Newest entries should be added at the top below this introduction.
 ---
 
 ---
+2026-09-03 — Estimation Phase 2C: explicit noise-floor and SNR estimation implemented and verified
+
+### Implementation
+
+Added:
+
+- `src/iqwav/estimation/noise.py`
+
+Modified:
+
+- `src/iqwav/estimation/__init__.py`
+
+Public API:
+
+- `estimate_noise_floor(samples, sample_rate, noise_region_hz) -> NoiseFloorEstimate`
+- `estimate_snr(samples, sample_rate, signal_region_hz, noise_region_hz) -> SNREstimate`
+- `NoiseFloorEstimate` and `SNREstimate` are frozen dataclasses.
+
+The caller must explicitly supply a noise-reference region. `estimate_snr`
+also requires an explicit signal region. Neither function performs blind noise
+detection, activity detection, signal-band selection, or classification.
+
+### Mathematical definition
+
+The implementation reuses IQWAV's existing FFT spectrum utility. For an N
+sample block, each FFT bin has power `abs(FFT)**2 / N**2`, so the sum of all
+two-sided bin powers equals mean-square sample power by Parseval's identity.
+The noise power density is selected-region bin power divided by the selected
+physical bin width, in sample-units-squared/Hz. Its dB value is
+`10*log10(density)`, referenced to 1 sample-unit-squared/Hz.
+
+Frequency regions are `(lower_hz, upper_hz)`. They select FFT-bin centers
+with `lower_hz <= f < upper_hz`. The one exception is the real, even-N
+Nyquist endpoint: it is included when `upper_hz == sample_rate/2`, so it can
+be measured from the valid real-valued axis. Region precision is limited to
+the FFT-bin spacing `sample_rate / N`.
+
+For SNR, measured signal-region power includes signal plus noise. Reference
+noise density is multiplied by the selected signal-region bandwidth to yield
+expected noise inside that region. Residual signal power is measured total
+minus expected noise, and `snr_db = 10*log10(residual_signal_power /
+estimated_noise_power)`. This normalizes for different signal/noise-region
+bandwidths. Zero reference noise or non-positive residual signal power raises
+`ValueError`; no NaN or infinite SNR is returned.
+
+Complex input retains independent signed two-sided bins over
+`[-sample_rate/2, sample_rate/2]`. Real input follows Phase 2B: conjugate
+bins are folded onto a non-negative axis, while DC and even-N Nyquist bins
+are counted once and have half-bin physical width at the axis boundary.
+
+### Tests
+
+Added:
+
+- `tests/unit/test_noise_estimation.py`
+
+Focused Phase 2C result: `28 passed`.
+
+Pristine pre-change repository baseline: `352 passed`.
+
+Full regression result after Phase 2C: `380 passed`.
+
+The focused tests cover deterministic AWGN at several powers, known tone plus
+AWGN SNR, unequal-bandwidth normalization, caller-selected regions, positive
+and negative complex frequency regions, real folding, DC/Nyquist boundaries,
+invalid inputs and regions, degenerate noise/signal cases, frozen dataclasses,
+repeatability, and finite-sample tolerances.
+
+### Limitations and deferred work
+
+These estimators depend on caller-provided representative regions and a known
+sample rate. They use a single FFT block (no windowing, Welch averaging,
+confidence interval, or leakage correction) and do not infer RF semantics
+from IQ or WAV samples. Blind noise-floor/SNR estimation, activity detection,
+carrier/CFO estimation or correction, synchronization, modulation
+classification, baud-rate estimation, FEC, framing, payload recovery, and GUI
+work remain deferred.
+
+
 2026-09-03 — Estimation Phase 2B: occupied-bandwidth estimation implemented and verified
 
 ### Implementation
