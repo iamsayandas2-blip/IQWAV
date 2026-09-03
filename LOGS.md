@@ -13,6 +13,106 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+
+## Phase 2F — Controlled BPSK/QPSK Modulation Estimation
+
+### Scope
+
+Implemented a bounded modulation-estimation primitive for controlled,
+rectangular-pulse IQWAV waveforms.
+
+The estimator requires:
+
+- known integer samples-per-symbol;
+- known symbol-boundary offset;
+- symbol-synchronous sampling;
+- controlled IQWAV-generated BPSK/QPSK waveforms.
+
+This is not blind automatic modulation recognition.
+
+### Implementation
+
+- Added `src/iqwav/estimation/modulation.py`.
+- Added `ModulationEstimate`.
+- Added `estimate_modulation()`.
+- Exported the estimator through `iqwav.estimation`.
+- Uses interior samples from complete symbol periods.
+- Uses second- and fourth-order rotational-symmetry statistics.
+- Supports constant amplitude scaling and constant phase rotation.
+- Does not modify, filter, resample, or synchronize the input.
+
+### Supported Classes
+
+- BPSK
+- QPSK
+
+Unsupported:
+
+- FSK
+- QAM
+- higher-order PSK;
+- AM/FM classification;
+- blind AMR;
+- timing recovery;
+- carrier recovery;
+- FEC;
+- framing;
+- payload recovery;
+- machine learning.
+
+### Ambiguity and Limitations
+
+The estimator classifies the observed constellation, not transmitter intent.
+
+A QPSK stream using only one antipodal pair is mathematically
+indistinguishable from genuine BPSK. Therefore, an antipodal observation
+is reported as BPSK in the observed-constellation sense, but this does
+not establish the transmitter's intended modulation.
+
+Confidence is a classification margin, not a probability, error rate,
+or guarantee of modulation identity.
+
+Sixteen complete symbols is the numerical minimum. At least 64 complete
+symbols are recommended for more reliable classification.
+
+Short blocks, imbalanced constellations, unsupported modulations,
+unmodulated tones, and residual carrier drift can produce misleading
+classifications.
+
+### Validation
+
+Tested:
+
+- clean BPSK and QPSK;
+- multiple samples-per-symbol values;
+- boundary offsets;
+- amplitude scaling;
+- constant phase rotations;
+- AWGN;
+- residual CFO;
+- short blocks;
+- imbalanced and subset constellations;
+- invalid inputs;
+- constant and zero signals;
+- determinism;
+- input non-mutation.
+
+Focused tests: 304 passed.
+
+Full regression: 895 passed using a writable local pytest
+base directory.
+
+The ordinary full run also produced 17 pre-existing Windows
+temporary-directory permission errors. Re-running with
+`--basetemp=.pytest_tmp` removed those unrelated collection errors.
+
+### Status
+
+Phase 2F implemented and validated as a controlled BPSK/QPSK
+modulation-estimation primitive.
+
+Blind modulation recognition remains out of scope.
+
 # LOGS entry — Phase 2E
 
 Append the block below to the top of `LOGS.md`, directly under the
