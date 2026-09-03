@@ -15,6 +15,136 @@ Newest entries should be added at the top below this introduction.
 
 
 ---
+2026-09-03 — Estimation Phase 2D: known-reference frequency-offset (CFO) estimation implemented and verified
+
+### Implementation
+
+Added:
+
+- `src/iqwav/estimation/frequency_offset.py`
+
+Modified:
+
+- `src/iqwav/estimation/__init__.py`
+
+Public API:
+
+- `estimate_frequency_offset(samples, sample_rate, reference_frequency_hz, *, refine=True) -> FrequencyOffsetEstimate`
+- `FrequencyOffsetEstimate` (frozen dataclass): `observed_frequency_hz`,
+  `reference_frequency_hz`, `frequency_offset_hz`, `bin_frequency_hz`,
+  `resolution_hz`, `refined`
+
+The reference frequency is a caller-supplied input, never inferred. The
+estimator reuses the Phase 2A peak-frequency estimator
+(`estimate_peak_frequency`) for the observation instead of duplicating FFT,
+peak-selection, or refinement logic; Phase 2D contributes only the
+reference-relative arithmetic and the reference-specific validation.
+
+### Mathematical definition
+
+    frequency_offset_hz = observed_frequency_hz - reference_frequency_hz
+
+`observed_frequency_hz` is Phase 2A's dominant-component frequency for the
+same `refine` setting, and the offset is the plain arithmetic difference: no
+modular reduction, unwrapping, scaling, or extra sign convention. A positive
+offset means the observed component lies above the reference.
+
+Conventions are inherited unchanged from Phase 2A. Complex IQ input is
+searched over the full two-sided spectrum, so both the observation and the
+reference are signed frequencies within `[-sample_rate/2, +sample_rate/2]`.
+Real input follows the non-negative convention: the observation is folded
+onto `[0, sample_rate/2]`, so the reference must also be non-negative and
+within that range (pass `abs(f)`).
+
+`resolution_hz` is the raw FFT bin spacing `sample_rate / N`, i.e. the
+frequency quantum of the analysis and not an error bound. With `refine=False`
+the observation, and therefore the offset, is quantized to that grid (error
+bounded by `resolution_hz / 2` for an isolated tone). With `refine=True`
+Phase 2A's three-point parabolic log-magnitude interpolation is applied
+unchanged. `bin_frequency_hz` always carries the unrefined peak-bin center, so
+the raw and refined observations remain distinguishable in one result.
+
+The input signal is never modified: no mixing, de-rotation, resampling,
+filtering, or CFO correction is performed, and no corrected signal is
+returned. The measured offset is the entire output.
+
+### Validation
+
+Validation order is `sample_rate` (positive, finite), then
+`reference_frequency_hz` (finite, and inside the range observable at that
+sample rate for the given input kind — the range depends on both), then
+`samples`, whose validation is delegated to Phase 2A (1-D, at least 4 finite
+values, not constant or all-zero). A reference outside the observable range
+raises `ValueError` rather than producing a meaningless difference.
+
+### Boundary behavior
+
+A reference of exactly `0` (DC) or exactly `±sample_rate/2` (Nyquist) is
+accepted. A real Nyquist tone measures at `+sample_rate/2` and gives a zero
+offset against that reference. For complex input at the Nyquist boundary the
+two-sided axis wraps: `numpy.fft.fftfreq` labels the Nyquist bin
+`-sample_rate/2`, so an unrefined observation there differenced against a
+`+sample_rate/2` reference shows the full `-sample_rate` wrap, while
+refinement resolves the same tone back to just below `+sample_rate/2`.
+Phase 2D does not attempt to resolve that inherent ambiguity; it is
+documented and pinned by a test.
+
+### Tests
+
+Added:
+
+- `tests/unit/test_frequency_offset.py`
+
+Focused Phase 2D result: `71 passed`.
+
+Pristine pre-change repository baseline: `381 passed`.
+
+Full regression result after Phase 2D: `452 passed` (381 + 71, zero
+regressions).
+
+Coverage includes zero, positive, and negative CFO; the
+`offset == observed - reference` identity across both refine settings;
+off-bin observations and off-bin references; `refine=True` versus
+`refine=False`, with refinement shown to beat the raw bin and the raw error
+shown to stay within half a bin; signed positive and negative complex
+frequencies, including an offset that crosses 0 Hz; real input under the
+non-negative convention, for both signs of the generated tone and for
+negative offsets; noisy complex tones at 20/10/6 dB SNR plus a noisy real
+tone; dominant-component selection between two simultaneous tones;
+`resolution_hz` tracking the analysis length; the four-sample minimum block;
+proof the input array is left untouched; DC and Nyquist boundary references;
+the near-Nyquist wrap; integer argument normalization; the full invalid-input
+set (bad sample rate, non-finite reference, out-of-range reference for both
+the real and complex conventions, empty/too-short/non-1-D/non-finite samples,
+and constant or zero signals); frozen-dataclass immutability; and
+determinism across repeated calls.
+
+Test command used: `PYTHONPATH=src python -m pytest` — the package is not
+installed in this environment.
+
+### Limitations and deferred work
+
+A single FFT block is analyzed, with no windowing, Welch averaging, leakage
+correction, or confidence interval. The measurement describes whichever
+component is strongest in the block, so a spur or a stronger neighbouring
+signal is reported instead; the offset is only meaningful when the dominant
+component is the one the reference describes. Sub-bin accuracy relies on
+Phase 2A's isolated-sinusoid assumption, and near-Nyquist results carry the
+wrap ambiguity described above.
+
+Explicitly out of scope for this module and still deferred: blind carrier
+detection, automatic reference-frequency discovery, CFO correction, carrier
+recovery, PLL/Costas-loop synchronization, symbol-timing recovery, baud-rate
+estimation, AMR/modulation classification, FEC, framing, payload recovery,
+and GUI work.
+
+### Repository state
+
+Nothing was committed or pushed. The working tree holds the new estimator,
+the new test module, the `estimation/__init__.py` export update, and this log
+entry file. `README.md`, `LOGS.md`, and every pre-existing module and test are
+unchanged.
+
 
 ---
 2026-09-03 — Estimation Phase 2C: explicit noise-floor and SNR estimation implemented and verified
