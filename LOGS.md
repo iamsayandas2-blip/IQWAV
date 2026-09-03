@@ -13,6 +13,228 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+# LOGS entry — Phase 2E
+
+Append the block below to the top of `LOGS.md`, directly under the
+introduction (newest entry first), preserving the existing `---` separators.
+
+---
+2026-09-03 — Estimation Phase 2E: bounded symbol/baud-rate estimation for controlled rectangular-pulse signals implemented and verified
+
+### Implementation
+
+Added:
+
+- `src/iqwav/estimation/symbol_rate.py`
+
+Modified:
+
+- `src/iqwav/estimation/__init__.py`
+
+Public API:
+
+- `estimate_symbol_rate(samples, sample_rate, *, min_samples_per_symbol=2,
+  max_samples_per_symbol=64, quality_ratio=0.75, min_quality=0.02) ->
+  SymbolRateEstimate`
+- `SymbolRateEstimate` (frozen dataclass): `symbol_rate_hz`,
+  `samples_per_symbol`, `sample_rate_hz`, `symbol_rate_resolution_hz`,
+  `quality`, `concentration`, `boundary_offset`, `symbol_count`,
+  `effective_transitions`, `searched_samples_per_symbol`
+
+### Why this estimator
+
+The existing waveform model was inspected first. `symbols_to_samples` (and
+therefore `bpsk_waveform` and `qpsk_waveform`) builds waveforms with
+`numpy.repeat`, holding each symbol constant for exactly
+`samples_per_symbol` samples, and `samples_per_symbol` is validated there as
+an **integer** `>= 1`. The generated signal is thus piecewise constant with
+an integer symbol period and no pulse shaping. That model does support a
+defensible estimator, so no stop was required — but it also means integer
+periods are the only thing the model can produce, so the API is deliberately
+constrained to the integer-period grid rather than pretending to estimate
+fractional samples-per-symbol.
+
+An FFT-of-`|diff|` spectral-line approach was rejected: for a perfectly
+rectangular pulse train the harmonics of the symbol-rate line are
+equal-magnitude in the ideal case, so peak-picking cannot separate the
+fundamental from its harmonics without an arbitrary threshold. The
+time-domain concentration search below is exact on the grid the generators
+actually produce, needs no transition-detection threshold, and yields a
+quality figure with a real interpretation.
+
+### Method
+
+Let `d[n] = abs(x[n] - x[n - 1])` for `n = 1 .. N - 1`. For a
+rectangular-pulse waveform `d` is exactly zero inside a symbol and non-zero
+only where consecutive symbols differ, so it is an impulse train whose
+impulses all fall on one residue class of `n` modulo the symbol period.
+
+For each candidate integer period `P` in the searched range:
+
+1. bin `d` by `n % P` (`numpy.bincount`) and take the largest bin's share of
+   the total as `concentration`;
+2. correct it for the `1 / P` level a structureless signal reaches by
+   chance:
+
+       quality = (concentration - 1 / P) / (1 - 1 / P)
+
+   which makes candidates of different `P` directly comparable, and equals
+   `T / (T + W)` — boundary-aligned transition mass over total mass —
+   independently of `P` for a correct period;
+3. keep every candidate whose `quality` is at least
+   `quality_ratio * best_quality` and return the **largest** of them.
+
+Step 3 is the crux. Every integer *divisor* of the true period concentrates
+the same impulses just as perfectly and therefore ties at the same quality,
+while an `m`-fold *multiple* splits them across `m` classes and reaches only
+about `best / m` (measured for a clean `sps = 8` block: `q(8) = 1.000`,
+`q(16) = 0.487`, `q(24) = 0.334`, `q(32) = 0.258`, `q(64) = 0.132`). Taking
+the largest well-supported candidate therefore lands on the symbol period
+rather than a sub-multiple, and the default ratio of 0.75 sits inside the
+wide gap to the nearest multiple.
+
+The ratio rule is not cosmetic: on a 20 dB SNR block with `sps = 8` the true
+period scored `quality = 0.4662` while its divisors scored `0.4698` (`P = 2`)
+and `0.4685` (`P = 4`), so an exact-maximum rule would have returned a
+divisor. Noise perturbs the tie; the ratio absorbs it.
+
+`symbol_rate_hz = sample_rate / P`, and `symbol_rate_resolution_hz` reports
+the grid spacing `sample_rate / P - sample_rate / (P + 1) =
+sample_rate / (P * (P + 1))`: the estimator's quantization, not its
+statistical error. `boundary_offset` is the residue class that won, i.e. the
+symbol-boundary phase within the block (0 for canonical generator output,
+`(-trim) mod P` after trimming a partial leading symbol).
+
+### Assumptions
+
+- Rectangular, unshaped pulses: the waveform is piecewise constant over each
+  symbol, exactly as `iqwav.modulation.symbols_to_samples` produces.
+- One constant symbol period for the whole block, an integer `>= 2` samples.
+  This is the only model the generators support, so the API is constrained to
+  it; fractional and drifting samples-per-symbol are not estimated.
+- The sample rate is known and supplied.
+- The symbol sequence actually changes at a representative subset of
+  boundaries (pseudo-random data does). Boundaries between equal symbols
+  produce no transition and are invisible to any method of this kind.
+- The true period lies inside `[min_samples_per_symbol,
+  max_samples_per_symbol]`.
+
+### Limitations
+
+- **Not blind, not general.** Pulse-shaped (e.g. root-raised-cosine)
+  signals, multipath, timing jitter, fractional resampling, and multi-rate
+  captures all violate the piecewise-constant model. No claim is made for
+  them, and none is made for real over-the-air captures.
+- **True period above the search bound returns a divisor, not an error.** A
+  divisor is genuinely consistent with the observed transitions
+  (`sps = 32` searched to a maximum of 8 returns 8). The search range must be
+  bounded with knowledge of the signal, and it is echoed in the result.
+- **Data-dependent ambiguity.** If the stream only ever changes every `m`-th
+  boundary, the observable period is `m * P` and that is what is reported.
+- **Degeneracy is refused, not guessed.** A block whose transition mass sits
+  on effectively one impulse is explained equally well by every candidate
+  period, so `effective_transitions` — the threshold-free participation ratio
+  `(sum d)^2 / sum(d^2)` over the winning class — must reach 2.0 or a
+  `ValueError` is raised. This was found empirically: a 5-symbol,
+  `sps = 8` block with one observable transition returned period 9 before the
+  guard existed.
+- **`min_quality` is length-dependent.** Pure Gaussian noise reaches roughly
+  `0.55 / sqrt(N)`: measured best quality `0.0093` at `N = 4096`, `0.0186` at
+  `N = 1024`, `~0.030` at `N = 256`. The 0.02 default therefore rejects long
+  structureless blocks (and `sps = 1`, which is indistinguishable from a
+  random sequence) while still accepting 0 dB BPSK/QPSK at `sps <= 16`
+  (`q ~ 0.028-0.10`), but a *short* structureless block can still pass it.
+  The contract is only that `result.quality >= min_quality`; the caller must
+  read `quality` and decide.
+- **`quality` is descriptive, not a confidence interval.** It is a statistic
+  of the one analyzed block: no averaging across blocks, no probability
+  attached. Clean input gives exactly 1.0; 20 dB BPSK at `sps = 8` gives
+  `~0.47`; 0 dB at `sps = 16` gives `~0.028`.
+- **Residual carrier offset lowers quality without biasing the estimate.**
+  Rotation makes the waveform non-constant inside a symbol: at `0.01 * Rs`
+  the period is still exact with `q ~ 0.95`, at `0.25 * Rs` still exact with
+  `q ~ 0.40`. No carrier or timing correction is performed here.
+- **`samples_per_symbol = 1` is out of range by construction** — a symbol
+  rate equal to the sample rate has no intra-symbol structure to measure.
+
+The input samples are never modified: no filtering, resampling, timing
+correction, or normalization, and no waveform is returned.
+
+### Validation
+
+Validation order is `sample_rate` (positive, finite), then `samples` (1-D,
+non-empty, at least 9 finite values — four periods of the shortest supported
+period plus the sample consumed by the first difference), then the estimator
+parameters (`min_samples_per_symbol` an integer `>= 2`,
+`max_samples_per_symbol` an integer `>= min_samples_per_symbol`,
+`quality_ratio` a finite float in `(0, 1]`, `min_quality` a finite float in
+`[0, 1)`; `bool` is rejected as a period bound). `max_samples_per_symbol` is
+then capped to `(N - 1) // 4`, and a range left empty by that cap raises
+rather than silently shrinking to nothing.
+
+Degenerate signals raise `ValueError` instead of returning a fabricated
+answer: a constant or all-zero block ("never change value"), a block where no
+candidate beats chance (`quality <= 0`, e.g. a strict ramp), a block whose
+estimated period falls below `min_quality` (pure noise, `sps = 1`), and a
+block with effectively a single transition.
+
+### Tests
+
+Added:
+
+- `tests/unit/test_symbol_rate_estimation.py`
+
+Focused Phase 2E result: `136 passed`.
+
+Pre-change repository baseline: `452 passed`.
+
+Full regression result after Phase 2E: `588 passed` (452 + 136, zero
+regressions).
+
+Coverage includes clean BPSK at `sps` 2/3/4/5/8/10/16/25/32/50/64 and clean
+QPSK at 2/4/8/10/16/32, each checked against the known ground truth
+`FS / sps`; symbol rate scaling across four sample rates; exactly zero error
+against ground truth; the clean invariants `quality == concentration == 1.0`,
+`boundary_offset == 0`, `symbol_count == n_symbols`; a real-valued
+rectangular waveform; the integer-grid resolution identity; noisy BPSK at
+20/15/10/5 dB and noisy QPSK at 20/10/5 dB across three `sps` values, all
+still exact; monotonically decreasing quality with decreasing SNR; the frozen
+dataclass (`FrozenInstanceError`, exact documented field set, field types);
+determinism across repeated calls including a copied array; proof the input
+array is left untouched; list input; the echoed and length-capped search
+range; the leading-partial-symbol phase (trim 3 of `sps = 8` gives
+`boundary_offset == 5` and `symbol_count == 299`) and every trim 0-7; a true
+period above the search bound returning a divisor; a single-value search
+range; the 12-sample minimum block; `quality_ratio` at 1.0 (still exact) and
+at 0.05 (documented multiple-of-the-period hazard); `min_quality` tightened
+(raises), zeroed (returns an honest low-quality result), and the
+`result.quality >= min_quality` contract; constant and all-zero blocks in
+both real and complex dtype; a single-transition step; pure complex noise at
+`N = 4096`; `sps = 1`; a monotonic ramp; and the full invalid-input set (six
+bad sample rates, empty, too-short, 2-D/column/3-D/scalar, non-finite real
+and complex samples, non-integer and out-of-range period bounds, non-numeric
+and out-of-range `quality_ratio` and `min_quality`, a block too short for the
+requested range, and validation order).
+
+Test command used: `PYTHONPATH=src python -m pytest -q --basetemp=.pytest_tmp`
+— the package is not installed in this environment, and the explicit
+`basetemp` avoids a pre-existing `PermissionError` on the default Windows temp
+directory in `tests/unit/test_io.py` that is unrelated to this change.
+
+### Repository state
+
+Nothing was committed or pushed. The working tree holds the new estimator,
+the new test module, the `estimation/__init__.py` export update, and this log
+entry file. `README.md`, `LOGS.md`, and every pre-existing module and test are
+unchanged.
+
+### Next
+
+Deferred and still explicitly out of scope for this module: blind or
+pulse-shaped baud-rate estimation, symbol-timing recovery and timing loops,
+carrier recovery, modulation classification (AMR), framing, FEC, payload
+recovery, activity detection, and GUI work.
+
 
 ---
 2026-09-03 — Estimation Phase 2D: known-reference frequency-offset (CFO) estimation implemented and verified
