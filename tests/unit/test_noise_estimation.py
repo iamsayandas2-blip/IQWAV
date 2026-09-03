@@ -33,6 +33,28 @@ def test_awgn_floor_agrees_with_known_variance_with_finite_sample_tolerance():
     assert result.noise_power_density == pytest.approx(2 * 0.25 / 32768.0, rel=0.12)
     assert result.noise_floor_db == pytest.approx(10 * np.log10(2 * 0.25 / 32768.0), abs=0.55)
 
+def test_noise_psd_is_consistent_across_analysis_lengths():
+    rng = np.random.default_rng(12345)
+    fs = 32768.0
+
+    samples_long = rng.normal(scale=0.5, size=32768)
+    samples_short = samples_long[:8192]
+
+    long_result = estimate_noise_floor(
+        samples_long,
+        fs,
+        (1000.0, 15000.0),
+    )
+    short_result = estimate_noise_floor(
+        samples_short,
+        fs,
+        (1000.0, 15000.0),
+    )
+
+    assert short_result.noise_power_density == pytest.approx(
+        long_result.noise_power_density,
+        rel=0.15,
+    )
 
 @pytest.mark.parametrize("variance", [0.04, 0.25, 1.0])
 def test_awgn_floor_tracks_several_power_levels(variance):
