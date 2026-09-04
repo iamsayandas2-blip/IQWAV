@@ -13,6 +13,112 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+## Phase 2K — Controlled Receiver Pipeline Integration
+
+### Scope
+
+Implemented a higher-level controlled receiver workflow that integrates the
+existing Phase 2I receiver pipeline and Phase 2J parameter-estimation pipeline.
+
+The workflow supports controlled rectangular BPSK/QPSK signals with:
+
+- known sample rate;
+- optional known samples per symbol;
+- optional known modulation;
+- optional known constant CFO;
+- controlled integer timing offsets.
+
+This is not blind or general-purpose RF analysis.
+
+### Implementation
+
+Added:
+
+- `src/iqwav/pipeline/controlled_receiver.py`
+- `tests/unit/test_controlled_receiver_pipeline.py`
+
+Updated:
+
+- `src/iqwav/pipeline/__init__.py`
+
+The pipeline reuses the existing primitives for:
+
+1. Spectral peak estimation;
+2. Occupied-bandwidth estimation;
+3. SNR/noise estimation;
+4. Symbol-rate estimation;
+5. Optional known CFO correction;
+6. Integer timing recovery;
+7. BPSK/QPSK modulation estimation;
+8. Bit demodulation.
+
+### Result Behavior
+
+- Added `ControlledReceiverResult` containing recovered bits and processing
+  metadata.
+- Returns frequency, bandwidth, SNR, symbol-rate, modulation, CFO, and timing
+  information where available.
+- Includes per-stage status values:
+  - `success`;
+  - `failed`;
+  - `skipped`.
+- Includes stage-specific failure reasons.
+- Preserves successful earlier-stage results when a later stage fails.
+- Does not fabricate unavailable values.
+- Returns bits only when the required preceding stages succeed.
+- Demodulation failures now return structured results instead of propagating
+  `ValueError`.
+- Skipped stages are not incorrectly included in `failure_reasons`.
+
+### Validation
+
+Tested:
+
+- clean BPSK;
+- clean QPSK;
+- multiple sample rates;
+- multiple samples per symbol;
+- zero, positive, and negative known CFO;
+- multiple integer timing phases;
+- known and estimated parameters;
+- ambiguous modulation;
+- missing samples-per-symbol;
+- demodulation failure handling;
+- skipped-stage failure-reason behavior;
+- deterministic output;
+- input non-mutation;
+- invalid inputs.
+
+Focused tests: **39 passed**
+
+Full regression: **1190 passed**
+
+### Limitations
+
+The pipeline does not perform:
+
+- blind CFO estimation;
+- blind timing recovery;
+- blind sample-rate estimation;
+- general modulation recognition;
+- pulse-shape identification;
+- carrier-recovery loops;
+- FEC;
+- deinterleaving;
+- framing;
+- payload recovery;
+- GUI processing.
+
+The implementation is an orchestration layer only and does not introduce new
+DSP or estimation algorithms.
+
+### Status
+
+Phase 2K implemented, tested, and approved.
+
+The controlled receiver and parameter-estimation workflows are now integrated,
+but the system is not yet a complete blind RF/IQ analysis receiver.
+
 ## Phase 2J — Controlled Parameter Estimation Pipeline
 
 ### Scope
