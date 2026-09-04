@@ -13,6 +13,121 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+## Phase 2H — Controlled Symbol-Timing Recovery
+
+### Scope
+
+Implemented a bounded symbol-timing recovery primitive for controlled
+rectangular-pulse BPSK and QPSK sample blocks.
+
+The primitive requires:
+
+- known and exact integer samples per symbol;
+- a constant timing offset across the analyzed block;
+- rectangular, piecewise-constant symbol waveforms;
+- sufficient samples to score four complete symbol windows.
+
+This is not blind timing recovery or a general-purpose receiver synchronizer.
+
+### Implementation
+
+- Added `src/iqwav/synchronization/timing.py`.
+- Added `SymbolTimingRecovery` frozen result dataclass.
+- Added `recover_symbol_timing()`.
+- Exported both through `iqwav.synchronization`.
+- Searches exactly one symbol period of integer timing phases:
+  `0, 1, ..., samples_per_symbol - 1`.
+- Scores each phase using the explained-dispersion criterion:
+  the fraction of sample variation explained by piecewise-constant
+  symbol windows.
+- Uses the same scored region and number of windows for every candidate
+  phase.
+- Selects the highest-scoring phase deterministically.
+- Uses the smallest phase when scores are tied.
+- Extracts one sample per symbol at the interior midpoint of each period.
+- Returns copied symbol samples without filtering, averaging, rescaling,
+  or resampling.
+- Preserves the input samples and their dtype.
+
+### Returned Metadata
+
+The result exposes:
+
+- recovered symbol samples;
+- selected timing-boundary offset;
+- first returned symbol index;
+- samples per symbol;
+- returned symbol count;
+- scored symbol count;
+- selected timing quality;
+- best-versus-second-best margin;
+- quality for every candidate phase;
+- all tied candidate offsets.
+
+### Validation
+
+Tested:
+
+- zero timing offset;
+- positive and negative integer timing offsets;
+- offsets spanning every phase within one symbol period;
+- offsets equal to whole symbol periods;
+- BPSK and QPSK waveforms;
+- multiple samples-per-symbol values;
+- end-to-end recovery through existing BPSK/QPSK demodulators;
+- trailing partial symbols;
+- midpoint sample-index correctness;
+- deterministic tie-breaking;
+- input non-mutation;
+- read-only input;
+- returned-array memory independence;
+- invalid samples-per-symbol values;
+- empty, multidimensional, and non-finite inputs;
+- insufficient sample blocks;
+- constant and repeating-symbol blocks;
+- ambiguous timing phases;
+- fractional-delay behavior under the controlled rectangular model;
+- AWGN robustness;
+- amplitude scaling;
+- constant carrier-phase rotation;
+- agreement with the symbol-rate estimator;
+- compatibility with the modulation estimator.
+
+### Limitations
+
+This primitive does not perform:
+
+- blind samples-per-symbol estimation;
+- fractional or sub-sample timing recovery;
+- interpolation;
+- timing loops;
+- Gardner timing recovery;
+- Mueller–Müller timing recovery;
+- PLL-based tracking;
+- clock-drift correction;
+- carrier recovery;
+- CFO estimation or correction;
+- pulse-shaping support;
+- FSK, QAM, or general waveform support;
+- FEC;
+- de-interleaving;
+- framing;
+- payload recovery;
+- GUI processing.
+
+Timing recovery is limited to one constant integer phase for the entire
+block. Constant or repetitive blocks may be genuinely unidentifiable;
+such cases are reported through tied offsets and zero margin rather than
+being falsely treated as uniquely recovered.
+
+### Status
+
+Phase 2H implemented and validated as a controlled integer
+symbol-timing-phase recovery primitive.
+
+General-purpose blind timing recovery and timing-loop synchronization
+remain out of scope.
+
 ## Phase 2G — Controlled Carrier-Frequency-Offset Correction
 
 ### Scope
