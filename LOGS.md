@@ -13,6 +13,107 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+## Phase 2G — Controlled Carrier-Frequency-Offset Correction
+
+### Scope
+
+Implemented a bounded carrier-frequency-offset correction primitive for
+complex IQ samples.
+
+The correction requires:
+
+- known sample rate;
+- known frequency offset;
+- complex IQ input;
+- a constant frequency offset across the analyzed block.
+
+This is not blind CFO estimation or carrier recovery.
+
+### Implementation
+
+- Added `src/iqwav/dsp/frequency_correction.py`.
+- Added `correct_frequency_offset()`.
+- Exported the function through `iqwav.dsp`.
+- Uses a vectorized complex conjugate-phasor multiplication.
+- Uses sample indices `0, 1, ..., N-1`.
+- Returns a new `complex128` array.
+- Preserves sample count and signal magnitude.
+- Does not modify the input array.
+- Does not use FFT, filtering, resampling, or amplitude normalization.
+
+### Correction Convention
+
+If the received signal is:
+
+    r[n] = s[n] * exp(+j * 2π * f_offset * n / sample_rate)
+
+then the corrected signal is:
+
+    s_hat[n] = r[n] * exp(-j * 2π * f_offset * n / sample_rate)
+
+The correction therefore applies the conjugate of the phasor used by
+`apply_frequency_offset()`.
+
+### Validation
+
+Tested:
+
+- zero frequency offset;
+- positive frequency offset;
+- negative frequency offset;
+- multiple sample rates;
+- multiple samples-per-symbol values;
+- controlled BPSK waveforms;
+- controlled QPSK waveforms;
+- offsets larger than the symbol rate;
+- amplitude preservation;
+- sample-count preservation;
+- output allocation;
+- deterministic behavior;
+- input non-mutation;
+- output dtype;
+- invalid sample rates;
+- invalid frequency offsets;
+- empty input;
+- non-one-dimensional input;
+- non-finite input;
+- real-valued input rejection;
+- recovery through the existing known-timing demodulators.
+
+Focused tests: 32 passed.
+
+Full regression: 927 passed.
+
+### Limitations
+
+The frequency offset must be supplied by the caller.
+
+This primitive does not perform:
+
+- blind CFO estimation;
+- spectral peak searching;
+- carrier recovery;
+- PLL or Costas-loop tracking;
+- timing recovery;
+- symbol-rate estimation;
+- modulation classification;
+- filtering;
+- resampling;
+- FEC;
+- de-interleaving;
+- framing;
+- payload recovery;
+- GUI processing.
+
+Only a known, constant frequency offset is corrected.
+
+### Status
+
+Phase 2G implemented and validated as a controlled CFO-correction
+primitive.
+
+Blind carrier and timing recovery remain out of scope.
+----------------
 
 ## Phase 2F — Controlled BPSK/QPSK Modulation Estimation
 
