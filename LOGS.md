@@ -13,6 +13,105 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+## Phase 2J — Controlled Parameter Estimation Pipeline
+
+### Scope
+
+Implemented a bounded automatic parameter-estimation pipeline for controlled rectangular BPSK/QPSK IQ signals.
+
+The pipeline assumes:
+
+- known sample rate;
+- rectangular-pulse BPSK or QPSK signals;
+- optional known constant CFO;
+- controlled signal conditions.
+
+This is not blind or general-purpose RF analysis.
+
+### Implementation
+
+Added:
+
+- `src/iqwav/pipeline/analysis.py`
+- `tests/unit/test_analysis_pipeline.py`
+
+Updated:
+
+- `src/iqwav/pipeline/__init__.py`
+
+The pipeline connects the existing primitives in this order:
+
+1. Dominant spectral peak estimation;
+2. Occupied-bandwidth estimation;
+3. Noise-floor and SNR estimation;
+4. Symbol-rate estimation;
+5. Optional known CFO correction;
+6. Integer symbol-timing recovery;
+7. Controlled BPSK/QPSK modulation estimation;
+8. Conditional bit demodulation.
+
+### Result Behavior
+
+- Returns a frozen result object containing estimated parameters and processing metadata.
+- Preserves successful earlier estimates if a later stage fails.
+- Does not fabricate unavailable values.
+- Returns bits only when:
+  - symbol rate is available;
+  - timing recovery succeeds;
+  - modulation is unambiguous;
+  - supported demodulation is possible.
+- Estimator failures are converted into partial results with a failure reason rather than crashing the pipeline.
+
+### Validation
+
+Tested:
+
+- clean BPSK;
+- clean QPSK;
+- multiple sample rates;
+- multiple samples per symbol;
+- positive and negative known CFO;
+- zero CFO;
+- timing-phase variations;
+- AWGN;
+- large uncorrected CFO;
+- pure-noise failure;
+- short-input failure;
+- modulation ambiguity;
+- deterministic behavior;
+- input non-mutation;
+- sample-rate preservation;
+- invalid inputs.
+
+Focused tests: **32 passed**
+
+Full regression: **1151 passed**
+
+### Limitations
+
+The pipeline does not perform:
+
+- blind CFO estimation;
+- blind timing recovery;
+- blind sample-rate estimation;
+- general modulation recognition;
+- pulse-shape identification;
+- carrier recovery;
+- timing loops;
+- FEC;
+- de-interleaving;
+- framing;
+- payload recovery;
+- GUI processing.
+
+The SNR noise regions are heuristic, and frequency/bandwidth estimates are performed before optional CFO correction.
+
+### Status
+
+Phase 2J implemented, corrected, and approved.
+
+This is a controlled automatic estimation pipeline, not yet the complete blind RF/IQ analysis system.
+
 ## Phase 2I — Controlled End-to-End BPSK/QPSK Receiver Pipeline
 
 ### Scope
