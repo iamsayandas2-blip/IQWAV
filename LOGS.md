@@ -13,6 +13,141 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+## Phase 2I — Controlled End-to-End BPSK/QPSK Receiver Pipeline
+
+### Scope
+
+Implemented a narrow, controlled receiver pipeline that connects the
+previously validated DSP primitives.
+
+The pipeline supports:
+
+- rectangular-pulse BPSK and QPSK signals;
+- known sample rate;
+- known integer samples per symbol;
+- known modulation type;
+- known constant carrier-frequency offset;
+- one constant integer timing phase recovered by Phase 2H.
+
+This phase demonstrates the transition from IQ samples to recovered
+digital bits. It is not a blind or general-purpose RF receiver.
+
+### Processing Chain
+
+The pipeline performs the following operations in fixed order:
+
+1. Correct the supplied CFO using Phase 2G.
+2. Recover the best integer timing phase using Phase 2H.
+3. Use the single representative sample returned for each symbol.
+4. Demodulate using the existing BPSK or QPSK demodulator with
+   `samples_per_symbol=1`.
+5. Return the recovered bits and processing metadata.
+
+### Implementation
+
+- Added `src/iqwav/pipeline/receiver.py`.
+- Added `ReceiverPipelineResult` as a frozen result dataclass.
+- Added `run_receiver_pipeline()`.
+- Added `src/iqwav/pipeline/__init__.py`.
+- Exported the pipeline function and result type.
+- Reused existing CFO correction, timing recovery, and demodulation
+  primitives.
+- Added validation for:
+  - modulation type;
+  - sample rate;
+  - samples per symbol;
+  - CFO;
+  - sample dimensionality;
+  - empty input;
+  - finite complex-valued IQ data.
+- Preserved the original input samples.
+- Returned CFO-corrected samples, timing metadata, selected timing offset,
+  symbol count, and recovered bits.
+
+### Validation
+
+Tested:
+
+- clean BPSK;
+- clean QPSK;
+- positive CFO;
+- negative CFO;
+- zero CFO;
+- multiple sample rates;
+- multiple samples-per-symbol values;
+- multiple integer timing phases;
+- correct recovered bits;
+- correct selected timing phase;
+- returned metadata;
+- input non-mutation;
+- deterministic repeated calls;
+- invalid modulation;
+- invalid sample rate;
+- invalid samples per symbol;
+- empty input;
+- insufficient input;
+- incorrect supplied CFO;
+- absence of silent blind CFO correction.
+
+Focused tests: 34 passed.
+
+Full regression: 1153 passed.
+
+### Alignment with the Problem Statement
+
+This phase provides a foundational receiver-processing stage by demonstrating
+the controlled conversion of IQ samples into recovered digital bits.
+
+It supports the broader architecture for future:
+
+- automatic parameter estimation;
+- blind synchronization;
+- modulation recognition;
+- FEC and interleaving analysis;
+- framing;
+- payload recovery;
+- and GUI integration.
+
+However, this phase does not yet perform automatic analysis of unknown
+real-world RF signals. The modulation, sample rate, samples per symbol,
+and CFO are still supplied by the caller.
+
+### Limitations
+
+This pipeline does not perform:
+
+- blind CFO estimation;
+- blind timing recovery;
+- symbol-rate estimation;
+- modulation classification;
+- carrier recovery;
+- PLL or Costas-loop tracking;
+- interpolation;
+- filtering;
+- resampling;
+- pulse-shaping support;
+- FEC;
+- deinterleaving;
+- framing;
+- payload recovery;
+- real-world RF robustness;
+- GUI integration.
+
+The pipeline is limited to controlled rectangular BPSK/QPSK signals with
+known parameters and a constant integer timing phase.
+
+### Status
+
+Phase 2I implemented and validated as a controlled end-to-end receiver
+pipeline.
+
+It is aligned with the overall IQWAV architecture as a foundational
+milestone, but it is not a complete solution to the automatic RF signal
+analysis problem.
+
+Automatic parameter extraction and general-purpose RF processing remain
+future work.
+
 ## Phase 2H — Controlled Symbol-Timing Recovery
 
 ### Scope
