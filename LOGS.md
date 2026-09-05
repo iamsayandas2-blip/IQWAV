@@ -13,6 +13,109 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+## Signal Activity Detection and Active-Region Extraction
+
+### Scope
+
+Implemented a bounded activity-detection and segmentation primitive for
+complex IQ captures.
+
+The detector identifies window-level regions whose average power exceeds
+a configurable threshold relative to an estimated noise floor.
+
+This is intended to locate potentially active portions of a capture before
+parameter estimation or demodulation.
+
+### Implementation
+
+- Added `src/iqwav/detection/activity.py`.
+- Added `src/iqwav/detection/__init__.py`.
+- Added `ActiveRegion` and `ActivityDetectionResult` frozen dataclasses.
+- Added `detect_activity()`.
+- Exported the detection types and function through `iqwav.detection`.
+- Splits the input into non-overlapping windows.
+- Computes mean window power using the existing signal-power utility.
+- Estimates the noise floor from lower-power windows.
+- Applies a configurable dB threshold relative to the noise floor.
+- Merges nearby active windows.
+- Returns window-aligned start and end sample indices.
+- Returns region duration, average power, peak power, and detection metadata.
+- Preserves the input array.
+- Produces deterministic results.
+
+### Merge-Gap Correction
+
+The merge decision now uses the actual sample gap between active runs:
+
+    actual_gap_samples = (window_index - run_end - 1) * window_size
+
+Runs are merged only when:
+
+    actual_gap_samples <= merge_gap_samples
+
+The region boundaries remain window-aligned.
+
+This prevents a small requested merge gap from incorrectly merging regions
+separated by an entire inactive window.
+
+### Validation
+
+Tested:
+
+- all-noise input;
+- all-active input;
+- one active burst;
+- multiple active bursts;
+- bursts separated by silence;
+- nearby-region merging;
+- actual sample-gap behavior;
+- threshold behavior;
+- different window sizes;
+- short input;
+- deterministic output;
+- input non-mutation;
+- sample-index boundaries;
+- invalid input dimensions;
+- empty input;
+- non-finite input;
+- real-valued input rejection;
+- invalid sample rate;
+- invalid window size;
+- invalid threshold;
+- invalid merge-gap setting;
+- invalid noise-percentile setting.
+
+Focused tests: 17 passed.
+
+Full regression: 1207 passed.
+
+### Limitations
+
+The detector:
+
+- uses non-overlapping, window-aligned boundaries;
+- does not provide sample-accurate burst boundaries;
+- does not perform signal separation;
+- does not identify individual transmitters;
+- does not perform blind modulation recognition;
+- does not estimate symbol rate;
+- does not estimate or correct CFO;
+- does not perform timing recovery;
+- does not demodulate;
+- does not perform FEC, deinterleaving, framing, or payload recovery;
+- does not integrate with the GUI.
+
+Noise-floor estimation may be less reliable when most of the capture is
+active. No minimum active-duration rule is imposed beyond the window size.
+
+### Status
+
+Signal activity detection and active-region extraction implemented and
+validated.
+
+The merge-gap behavior is now based on actual sample distances rather than
+window-quantized gaps.
+
 ## Phase 2K — Controlled Receiver Pipeline Integration
 
 ### Scope
