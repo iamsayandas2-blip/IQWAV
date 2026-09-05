@@ -13,6 +13,149 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+## Complex IQ Band Extraction
+
+### Scope
+
+Implemented a bounded complex-IQ band-extraction primitive for isolating a
+caller-specified frequency band.
+
+The implementation supports:
+
+- positive-frequency bands;
+- negative-frequency bands;
+- bands crossing DC.
+
+This is preprocessing/channel isolation only. The requested frequency band
+must be supplied by the caller.
+
+### Implementation
+
+Added:
+
+- `src/iqwav/dsp/band_extraction.py`
+- `tests/unit/test_band_extraction.py`
+
+Updated:
+
+- `src/iqwav/dsp/__init__.py`
+
+Implemented:
+
+- `extract_band()`;
+- frozen `BandExtractionResult`.
+
+The extraction method:
+
+1. determines the center frequency of the requested band;
+2. frequency-shifts the center to DC;
+3. applies a low-pass FIR filter with cutoff equal to half the requested
+   bandwidth;
+4. shifts the filtered signal back to the original center frequency.
+
+The implementation reuses the existing:
+
+- `correct_frequency_offset()`;
+- `design_lowpass_fir()`;
+- `apply_fir_filter()`.
+
+No new filtering primitive or frequency-shifting implementation was
+duplicated.
+
+### Validation
+
+The input is validated for:
+
+- one-dimensional shape;
+- nonempty input;
+- finite samples;
+- complex IQ values;
+- positive finite sample rate;
+- finite cutoff frequencies;
+- `lower_hz < upper_hz`;
+- strict containment within the complex-baseband Nyquist range;
+- valid FIR tap count.
+
+The existing low-pass FIR validation is reused for `numtaps`.
+
+The output:
+
+- preserves the original sample count;
+- is returned as a new array;
+- does not modify the input;
+- is deterministic.
+
+### Testing
+
+Tested:
+
+- positive-frequency band extraction;
+- negative-frequency band extraction;
+- preservation of an in-band tone;
+- preservation of the original tone frequency after mix-down/filter/mix-up;
+- negative-frequency sign convention;
+- bands near DC;
+- bands containing DC;
+- attenuation of out-of-band tones;
+- mixed-tone isolation;
+- sample-count preservation;
+- input non-mutation;
+- new output allocation;
+- deterministic output;
+- multiple sample rates;
+- result metadata;
+- invalid sample rates;
+- invalid cutoffs;
+- non-finite cutoffs;
+- empty input;
+- real-valued input rejection;
+- non-finite input rejection;
+- Nyquist violations;
+- multidimensional input rejection;
+- too-short input;
+- FIR tap counts below the minimum;
+- non-integer FIR tap counts.
+
+Focused band-extraction tests: 25 passed.
+
+Full regression: 1283 passed.
+
+### Limitations
+
+This primitive does not perform:
+
+- automatic band detection;
+- automatic channel selection;
+- blind signal separation;
+- transmitter identification;
+- modulation recognition;
+- symbol-rate estimation;
+- CFO estimation;
+- timing recovery;
+- demodulation;
+- FEC;
+- deinterleaving;
+- framing;
+- payload recovery;
+- GUI integration.
+
+The FIR filter has a finite transition band and therefore is not an ideal
+brick-wall filter.
+
+The requested band is supplied explicitly by the caller.
+
+### Status
+
+Complex IQ band extraction implemented and validated.
+
+The primitive now provides controlled band isolation for positive-frequency,
+negative-frequency, and DC-crossing bands while reusing the existing DSP
+filtering and frequency-correction primitives.
+
+Focused tests: 25 passed.
+
+Full regression: 1283 passed.
+
 ## Signal Activity Detection and Active-Region Analysis
 
 ### Scope
