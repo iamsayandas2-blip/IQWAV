@@ -13,6 +13,196 @@ It answers:
 
 Newest entries should be added at the top below this introduction.
 
+## Signal Activity Detection and Active-Region Analysis
+
+### Scope
+
+Implemented signal activity detection, active-region extraction, and
+per-region analysis orchestration for complex IQ captures.
+
+The functionality identifies potentially active portions of a capture and
+then runs the existing controlled receiver workflow independently on each
+detected region.
+
+This work is intended to prevent silence/noise portions of a capture from
+being treated as one continuous signal.
+
+### Activity Detection
+
+Added:
+
+- `src/iqwav/detection/activity.py`
+- `src/iqwav/detection/__init__.py`
+- `tests/unit/test_activity_detection.py`
+
+Implemented:
+
+- window-based local power calculation;
+- lower-power-window noise-floor estimation;
+- configurable threshold relative to the noise floor;
+- active/inactive window classification;
+- merging of nearby active regions;
+- window-aligned active-region sample indices;
+- region duration;
+- average and peak power metadata;
+- deterministic frozen result dataclasses;
+- input validation;
+- input non-mutation.
+
+The detector supports all-noise, all-active, single-burst, and multiple-burst
+captures.
+
+### Merge-Gap Correction
+
+The initial implementation converted `merge_gap_samples` into a
+window-count quantity using ceiling division. This could incorrectly merge
+regions separated by a complete inactive window even when the requested
+sample gap was much smaller.
+
+The merge logic was corrected to compare the actual sample gap:
+
+    actual_gap_samples = (window_index - run_end - 1) * window_size
+
+Regions are merged only when:
+
+    actual_gap_samples <= merge_gap_samples
+
+Region boundaries remain window-aligned.
+
+A regression test was added using:
+
+- `window_size = 64`;
+- `merge_gap_samples = 1`;
+- two active windows separated by one full inactive 64-sample window.
+
+The regions correctly remain separate.
+
+Activity-detection focused tests: 17 passed.
+
+Full regression after the correction: 1207 passed.
+
+### Active-Region Analysis
+
+Added:
+
+- `src/iqwav/pipeline/active_region_analysis.py`
+- updates to `src/iqwav/pipeline/__init__.py`
+- `tests/unit/test_active_region_analysis.py`
+
+Implemented `analyze_active_regions()`.
+
+The orchestration:
+
+1. runs activity detection once over the complete IQ capture;
+2. returns a structured `no_activity` result when no active regions exist;
+3. orders detected regions by ascending start sample;
+4. extracts each region directly from the original capture;
+5. runs the existing controlled receiver pipeline independently on each
+   extracted region;
+6. preserves original sample-index mapping;
+7. returns one structured result per region;
+8. isolates a per-region `ValueError` so one failed region does not abort
+   analysis of the remaining regions;
+9. preserves structured receiver failures without fabricating parameters
+   or bits;
+10. preserves the complete activity-detection metadata.
+
+No detection, estimation, CFO-correction, timing-recovery, or demodulation
+logic was duplicated.
+
+### Result Structure
+
+Added frozen result dataclasses for:
+
+- overall active-region analysis;
+- individual region analysis.
+
+The overall result distinguishes the absence of activity from successful
+dispatch of active regions.
+
+Each region retains:
+
+- original start sample;
+- original end sample;
+- duration;
+- analysis status;
+- failure reason when applicable;
+- the existing `ControlledReceiverResult`.
+
+The existing receiver result continues to carry structured stage status and
+failure reasons and does not fabricate bits when processing fails.
+
+### Regression Testing
+
+Focused active-region tests cover:
+
+- no detected activity;
+- one active region;
+- multiple active regions;
+- independent region analysis;
+- original sample-index mapping;
+- deterministic ordering;
+- input non-mutation;
+- activity metadata preservation;
+- isolated per-region pipeline failure;
+- no fabricated receiver bits/parameters;
+- invalid input;
+- empty input;
+- real-valued input;
+- non-finite input;
+- insufficient active-region length;
+- frozen result dataclasses.
+
+An additional regression test verifies that the exact activity-detected
+slice is passed to the downstream receiver pipeline.
+
+The test explicitly checks:
+
+    samples[start_sample:end_sample]
+
+against the actual sample array received by the pipeline.
+
+Focused active-region tests: 17 passed.
+
+Full regression: 1224 passed.
+
+### Limitations
+
+Activity detection remains window-based and therefore does not provide
+sample-accurate burst boundaries.
+
+The activity detector does not perform:
+
+- multi-signal separation;
+- transmitter identification;
+- blind modulation recognition;
+- blind CFO estimation;
+- timing recovery;
+- demodulation;
+- FEC;
+- de-interleaving;
+- framing;
+- payload recovery.
+
+Active-region analysis does not assume that each detected region belongs to
+a different transmitter.
+
+The per-region receiver pipeline remains subject to the limitations of its
+underlying controlled parameter estimators and receiver primitives.
+
+### Validation Status
+
+Signal activity detection and active-region analysis are implemented and
+validated.
+
+Activity detection focused tests: 17 passed.
+
+Active-region analysis focused tests: 17 passed.
+
+Full regression after the complete work: 1224 passed.
+
+No blocking correctness issues remain for this feature.
+
 ## Signal Activity Detection and Active-Region Extraction
 
 ### Scope
